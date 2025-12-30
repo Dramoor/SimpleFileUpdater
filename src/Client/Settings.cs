@@ -4,17 +4,17 @@ namespace FileUpdaterClient;
 
 public static class Settings
 {
-    public const string Title = "Client Updater";
+    public const string Title = "UODiablo Updater";
     public const string TitleColor = "#F2F2F2";
     
-    public const string Subtitle = "Our shard's file downloader";
+    public const string Subtitle = "Stay up to date with the latest UODiablo files";
     public const string SubtitleColor = "#F2F2F2";
     
     public static SolidColorBrush DefaultTextColor = SolidColorBrush.Parse("#F2F2F2");
     public static SolidColorBrush ProgressBarBackground = SolidColorBrush.Parse("#212121");
     public static SolidColorBrush ProgressBarForeground = SolidColorBrush.Parse("#40D659");
     
-    public const string UpdateUrl = "http://yourshard.com:8080/";
+    public const string UpdateUrl = "http://172.245.159.22:8080/";
 
     public const string Finished = "Done, you're all up to date!";
     public const string ReqFileList = "Requesting file list from server..";
