@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SimpleFileUpdater is a cross-platform file synchronization system consisting of:
 - **Client**: Avalonia-based .NET 9.0 desktop application that checks local files against a server and downloads updates
-- **Server**: Python HTTP server that serves file listings with MD5 hashes and handles file downloads
+- **Server**: ASP.NET Core .NET 9.0 HTTP server that serves file listings with MD5 hashes and handles file downloads
 
 The client downloads only files that differ (by MD5 hash) or are missing, avoiding full re-downloads.
 
@@ -15,15 +15,19 @@ The client downloads only files that differ (by MD5 hash) or are missing, avoidi
 ```
 SimpleFileUpdater/
 ├── src/
-│   ├── Client/          # C# .NET client application
-│   │   ├── *.cs         # C# source files
-│   │   ├── *.axaml      # Avalonia XAML UI files
-│   │   ├── *.csproj     # Project file
-│   │   ├── *.sln        # Solution file
-│   │   └── resources/   # Visual assets (background.png, icon.ico)
-│   └── Server/          # Python server
-│       ├── serv.py      # HTTP server implementation
-│       └── start.sh     # Server startup script
+│   ├── Client/              # C# .NET client application
+│   │   ├── *.cs             # C# source files
+│   │   ├── *.axaml          # Avalonia XAML UI files
+│   │   ├── *.csproj         # Project file
+│   │   ├── *.sln            # Solution file
+│   │   └── resources/       # Visual assets (background.png, icon.ico)
+│   └── Server/              # C# .NET server application
+│       ├── Program.cs       # Main entry point with endpoints
+│       ├── ServerSettings.cs    # Configuration model
+│       ├── IniConfigProvider.cs # INI file parser
+│       ├── CacheService.cs      # Background cache service
+│       ├── FileUpdaterServer.csproj  # Project file
+│       └── settings.ini     # Server configuration file
 ├── README.md
 ├── LICENSE
 └── CLAUDE.md
@@ -55,15 +59,29 @@ dotnet publish -c Release -r osx-x64
 
 Output location: `src/Client/bin/Release/net9.0/{runtime}/publish/`
 
-### Server (Python)
+### Server (C# .NET)
 
-Start the server:
+Basic build:
 ```bash
 cd src/Server
-python3 serv.py
+dotnet build -c Release
 ```
 
-Requirements: Python 3.11+
+Platform-specific builds (creates self-contained single-file executables):
+```bash
+cd src/Server
+
+# Windows
+dotnet publish -c Release -r win-x64 --self-contained
+
+# Linux
+dotnet publish -c Release -r linux-x64 --self-contained
+
+# macOS (may need to run on Mac hardware)
+dotnet publish -c Release -r osx-x64 --self-contained
+```
+
+Output location: `src/Server/bin/Release/net9.0/{runtime}/publish/`
 
 ## Architecture
 
@@ -90,12 +108,62 @@ All phases use `ConcurrentQueue` for thread-safe work distribution and `Dispatch
 
 ### Server Architecture
 
-`src/Server/serv.py` is a simple HTTP server with two endpoints:
+The server is an ASP.NET Core minimal API application with the following components:
 
-- `GET /`: Returns JSON array of all files in `files/` directory with their MD5 hashes (cached in `jsoncache.json`, regenerated hourly)
-- `GET /file/{path}`: Serves the actual file content as `application/octet-stream`
+**Core Files:**
+- **Program.cs**: Main entry point and endpoint configuration
+  - Loads settings from `settings.ini` using `IniConfigProvider`
+  - Configures Kestrel server, CORS, logging, and middleware
+  - Defines two HTTP endpoints (see below)
+  - Registers `CacheService` as a background service
 
-File cache regeneration runs in a background daemon thread every hour.
+- **ServerSettings.cs**: Configuration model with properties for all settings
+  - Port, hostname, files directory, cache settings
+  - Security settings (CORS, path traversal protection, max file size)
+  - Logging settings (log level, file path, request logging)
+  - Performance settings (buffer size, compression, concurrent downloads)
+
+- **IniConfigProvider.cs**: INI file parser
+  - Reads and parses `settings.ini` file
+  - Maps sections and key-value pairs to `ServerSettings` properties
+  - Creates default `settings.ini` if missing
+  - Handles type conversion and validation
+
+- **CacheService.cs**: Background service (implements `BackgroundService`)
+  - Generates cache immediately on startup
+  - Regenerates cache periodically based on `CacheRegenerationInterval` setting
+  - Uses `SemaphoreSlim` for thread-safe cache regeneration
+  - Computes MD5 by streaming files (not loading into memory)
+  - Writes cache atomically (temp file + rename) to prevent corruption
+
+**HTTP Endpoints:**
+- **GET /**: Returns JSON array of all files in `files/` directory with their MD5 hashes
+  - Content-Type: `application/json`
+  - CORS: Configurable via `CorsAllowedOrigins` setting
+  - Returns cached data from `jsoncache.json`
+  - Returns empty array if cache doesn't exist
+
+- **GET /file/{**path}**: Streams file content from `files/` directory
+  - Content-Type: `application/octet-stream`
+  - CORS: Configurable via `CorsAllowedOrigins` setting
+  - Supports range requests (partial downloads/resume)
+  - Path traversal protection enabled by default
+  - Concurrent download limiting via semaphore
+  - Returns 404 if file doesn't exist
+  - Returns 413 if file exceeds `MaxFileSize` limit
+
+**Security Features:**
+- Path traversal protection prevents access outside `files/` directory
+- Configurable max file size to prevent abuse
+- Concurrent download limiting to prevent resource exhaustion
+- CORS policy configurable per deployment
+
+**Performance Features:**
+- Files streamed to clients (not loaded into memory)
+- Response compression (gzip/brotli) for JSON responses
+- Configurable streaming buffer size
+- Async/await throughout for scalability
+- Cache regeneration in background thread doesn't block requests
 
 ## Customization Points
 
@@ -110,6 +178,34 @@ All branding/configuration is in `src/Client/Settings.cs`:
 Visual assets:
 - `src/Client/resources/background.png`: 800x450 background image
 - `src/Client/resources/icon.ico`: Application icon
+
+### Server Configuration
+
+All server configuration is in `src/Server/settings.ini`:
+
+**Server Section:**
+- `Port`: Server port (default: 8080)
+- `Hostname`: Bind address (empty = all interfaces, "localhost" = local only)
+- `MaxConcurrentDownloads`: Concurrent download limit (default: 50, 0 = unlimited)
+
+**Files Section:**
+- `FilesDirectory`: Directory containing files to serve (default: ./files/)
+- `CacheFileName`: Cache file name (default: jsoncache.json)
+- `CacheRegenerationInterval`: Cache regeneration interval in seconds (default: 3600, 0 = disable)
+
+**Security Section:**
+- `CorsAllowedOrigins`: CORS origins (default: *, semicolon-separated for multiple)
+- `EnablePathTraversalProtection`: Path traversal protection (default: true)
+- `MaxFileSize`: Maximum file size in bytes (default: 0 = unlimited)
+
+**Logging Section:**
+- `LogLevel`: Minimum log level (default: Information)
+- `LogFilePath`: Log file path (empty = console only)
+- `EnableRequestLogging`: Log each request (default: true)
+
+**Performance Section:**
+- `StreamBufferSize`: Streaming buffer size in bytes (default: 81920)
+- `EnableCompression`: Enable gzip/brotli compression (default: true)
 
 ## Key Implementation Details
 
@@ -148,8 +244,11 @@ All user-facing strings are in `src/Client/Settings.cs`. Messages using format p
 - `ComparingFiles`: `{0}` = current file count, `{1}` = total files
 - `DownloadingFiles`: `{0}` = current file count, `{1}` = total files, `{2}` = download speed
 
+### Changing Server Settings
+Edit `settings.ini` in `src/Server/` directory and restart the server. All settings take effect on restart. The server automatically creates `files/` directory on first run.
+
 ### Testing Server Changes
-The Python server automatically creates `files/` directory on first run. Place test files there and restart server (or wait 1 hour for cache refresh).
+Place test files in the `files/` directory. The cache will regenerate automatically based on `CacheRegenerationInterval` (default: 1 hour), or restart the server for immediate cache refresh.
 
 ## Deployment Notes
 

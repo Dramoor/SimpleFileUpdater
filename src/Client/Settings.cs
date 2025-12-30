@@ -14,7 +14,7 @@ public static class Settings
     public static SolidColorBrush ProgressBarBackground = SolidColorBrush.Parse("#212121");
     public static SolidColorBrush ProgressBarForeground = SolidColorBrush.Parse("#40D659");
     
-    public const string UpdateUrl = "http://172.245.159.22:8080/";
+    public const string UpdateUrl = "http://127.0.0.1:8080/";
 
     public const string Finished = "Done, you're all up to date!";
     public const string ReqFileList = "Requesting file list from server..";

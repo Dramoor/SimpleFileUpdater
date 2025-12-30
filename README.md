@@ -1,5 +1,5 @@
 # SimpleFileUpdater
-This is a simple python file server and dotnet client to check md5 against server files and download if different.
+This is a simple cross-platform file synchronization system with a .NET server and .NET client that checks MD5 hashes against server files and downloads only files that differ.
 - This is intended for servers to provide an easy way for players to stay up to date with their files, only downloading files the player needs, instead of all of them in a zip.
 - This is customizable to your needs; you can change art, text, etc.
 
@@ -11,7 +11,7 @@ This is a simple python file server and dotnet client to check md5 against serve
 SimpleFileUpdater/
 ├── src/
 │   ├── Client/          # C# .NET client application
-│   └── Server/          # Python server
+│   └── Server/          # C# .NET server application
 ├── README.md
 ├── LICENSE
 └── CLAUDE.md
@@ -35,12 +35,33 @@ SimpleFileUpdater/
 - The final output will be in `src/Client/bin/Release/net9.0/{platform}/publish/` (These are the only files you need to distribute to players)
 
 # Server
-1. On your server make sure you have python 3.11+ installed
-2. Navigate to the server directory: `cd src/Server`
-3. Run `python3 serv.py`
-4. This will create a `files/` folder where you will place all files you want the client to be able to check/download.
-5. After placing your files in there, restart the server.
-6. When you update files, either restart the server or wait one hour. File cache is regenerated every hour. 
+
+## Building the Server
+1. Navigate to the server directory: `cd src/Server`
+2. Build the server:
+   - Development: `dotnet build -c Release`
+   - Linux: `dotnet publish -c Release -r linux-x64 --self-contained`
+   - Windows: `dotnet publish -c Release -r win-x64 --self-contained`
+   - MacOS: `dotnet publish -c Release -r osx-x64 --self-contained`
+3. The output will be in `src/Server/bin/Release/net9.0/{platform}/publish/`
+
+## Running the Server
+1. Run the server executable (from the publish directory or development build)
+2. On first run, a `settings.ini` file will be created with default settings
+3. A `files/` folder will be created automatically where you place all files you want the client to be able to check/download
+4. After placing your files in the `files/` directory, the cache will regenerate automatically every hour (configurable in settings.ini)
+
+## Configuration (settings.ini)
+The server is fully configurable via `settings.ini`:
+- **Port**: Server port (default: 8080)
+- **FilesDirectory**: Where to serve files from (default: ./files/)
+- **CacheRegenerationInterval**: How often to regenerate the file cache in seconds (default: 3600 = 1 hour)
+- **MaxConcurrentDownloads**: Limit concurrent downloads (default: 50)
+- **MaxFileSize**: Maximum file size to serve in bytes (default: 0 = unlimited)
+- **EnablePathTraversalProtection**: Security feature to prevent directory traversal attacks (default: true)
+- **LogLevel**: Logging verbosity (default: Information)
+- **EnableCompression**: Enable gzip/brotli compression (default: true)
+- And more... see settings.ini for full configuration options 
 
 # Client Info
 - After building the project, place the output files in the `same` directory you'd like the server files to be downloaded to.  
